@@ -3,13 +3,13 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>MN Bus Master: Full Curriculum</title>
+    <title>MN Bus Master: Sync Professional</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
         body { font-family: 'Segoe UI', system-ui, -apple-system, sans-serif; background-color: #f1f5f9; color: #0f172a; -webkit-tap-highlight-color: transparent; }
-        .unit-card { background: white; border-radius: 1.5rem; transition: all 0.3s ease; border: 1px solid #e2e8f0; position: relative; overflow: hidden; margin-bottom: 1rem; }
+        .unit-card { background: white; border-radius: 1.5rem; transition: all 0.3s ease; border: 1px solid #e2e8f0; margin-bottom: 1rem; }
         .active-unit { border: 3px solid #f59e0b; box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1); }
-        .sim-option { cursor: pointer; display: block; padding: 1.1rem; border-radius: 0.75rem; background: #334155; margin-top: 0.6rem; border: 2px solid transparent; text-align: left; width: 100%; color: white; transition: 0.2s; }
+        .sim-option { cursor: pointer; display: block; padding: 1.1rem; border-radius: 0.75rem; background: #334155; margin-top: 0.6rem; border: 2px solid transparent; text-align: left; width: 100%; color: white; }
         .progress-dot { width: 10px; height: 10px; border-radius: 50%; background: #cbd5e1; }
         .progress-dot.complete { background: #059669; }
         .progress-dot.current { background: #f59e0b; animation: pulse 2s infinite; }
@@ -23,7 +23,7 @@
         <div class="flex flex-col md:flex-row justify-between items-center gap-4">
             <div>
                 <h1 class="text-2xl font-black italic uppercase text-yellow-500">Bus Master</h1>
-                <p id="user-display" class="text-slate-400 text-xs tracking-widest uppercase font-bold">Initializing System...</p>
+                <p id="user-display" class="text-slate-400 text-xs tracking-widest uppercase font-bold">Establishing Cloud Link...</p>
             </div>
             <div id="overall-progress" class="flex gap-2 bg-slate-800 p-3 rounded-full"></div>
         </div>
@@ -32,14 +32,14 @@
     <main id="main-content">
         <div class="flex flex-col items-center justify-center py-20 text-slate-500">
             <div class="animate-spin rounded-full h-12 w-12 border-b-2 border-yellow-500 mb-4"></div>
-            <p>Loading Modules...</p>
+            <p>Syncing data across devices...</p>
         </div>
     </main>
 </div>
 
 <script type="module">
     import { initializeApp } from "https://www.gstatic.com/firebasejs/11.1.0/firebase-app.js";
-    import { getFirestore, doc, setDoc, getDoc, onSnapshot } from "https://www.gstatic.com/firebasejs/11.1.0/firebase-firestore.js";
+    import { getFirestore, doc, setDoc, getDoc, onSnapshot, enableIndexedDbPersistence } from "https://www.gstatic.com/firebasejs/11.1.0/firebase-firestore.js";
     import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.1.0/firebase-auth.js";
 
     const firebaseConfig = {
@@ -57,38 +57,48 @@
     const appId = 'bus-master-app';
 
     let userProgress = { currentUnit: 0, masteredUnits: [] };
-    let hasLoaded = false;
+    let hasCloudData = false;
 
-    // RESTORED 6 UNIT CURRICULUM
     const unitData = [
         { id: 0, title: "Unit 1: Danger Zones", questions: [{ q: "How far does the Danger Zone extend in front of the bus?", a: ["10ft", "20ft", "30ft", "5ft"], c: 2 }] },
         { id: 1, title: "Unit 2: Air Brakes", questions: [{ q: "When should the low air alarm trigger?", a: ["100 PSI", "60 PSI", "20 PSI"], c: 1 }] },
         { id: 2, title: "Unit 3: RR Crossings", questions: [{ q: "Stop distance from nearest rail?", a: ["5-10ft", "15-50ft", "100ft"], c: 1 }] },
-        { id: 4, title: "Unit 4: 8-Light Law", questions: [{ q: "Amber light distance in 45mph zone?", a: ["100ft", "200ft", "300ft"], c: 2 }] },
-        { id: 5, title: "Unit 5: Inspections", questions: [{ q: "Check for sleeping children is required:", a: ["Monthly", "Weekly", "After every route"], c: 2 }] },
-        { id: 6, title: "Unit 6: Medical/Legal", questions: [{ q: "MN Medical Exam frequency?", a: ["1 Year", "2 Years", "4 Years"], c: 1 }] }
+        { id: 3, title: "Unit 4: 8-Light Law", questions: [{ q: "Amber light distance in 45mph zone?", a: ["100ft", "200ft", "300ft"], c: 2 }] },
+        { id: 4, title: "Unit 5: Inspections", questions: [{ q: "Check for sleeping children is required:", a: ["Monthly", "Weekly", "After every route"], c: 2 }] },
+        { id: 5, title: "Unit 6: Medical/Legal", questions: [{ q: "MN Medical Exam frequency?", a: ["1 Year", "2 Years", "4 Years"], c: 1 }] }
     ];
 
-    setTimeout(() => {
-        if (!hasLoaded) {
-            const localData = localStorage.getItem('bus_master_local');
-            if (localData) userProgress = JSON.parse(localData);
-            document.getElementById('user-display').innerText = "Mode: Local (Sync Delayed)";
+    // Fallback timer: Show whatever we have (local or default) if cloud is slow
+    const fallbackTimer = setTimeout(() => {
+        if (!hasCloudData) {
+            const local = localStorage.getItem('bus_master_local');
+            if (local) userProgress = JSON.parse(local);
+            document.getElementById('user-display').innerText = "Mode: Local (Cloud Search Active)";
             renderDashboard();
         }
-    }, 2500);
+    }, 4000);
 
     onAuthStateChanged(auth, async (user) => {
         if (user) {
             const userDocRef = doc(db, 'artifacts', appId, 'users', user.uid, 'data');
+            
+            // Listen to cloud
             onSnapshot(userDocRef, (snap) => {
-                if (snap.exists() && !hasLoaded) {
+                if (snap.exists()) {
                     userProgress = snap.data().progress;
-                    hasLoaded = true;
-                    document.getElementById('user-display').innerText = `Sync: Active (${user.uid.substring(0,4)})`;
+                    hasCloudData = true;
+                    clearTimeout(fallbackTimer);
+                    document.getElementById('user-display').innerText = `Cloud Sync: ON (${user.uid.substring(0,4)})`;
+                    renderDashboard();
+                } else {
+                    // Create first save if new user
+                    setDoc(userDocRef, { progress: userProgress });
                     renderDashboard();
                 }
-            }, (err) => { if (!hasLoaded) renderDashboard(); });
+            }, (err) => {
+                console.error("Rules likely blocking access:", err);
+                renderDashboard();
+            });
         }
     });
 
@@ -106,22 +116,13 @@
             const isLocked = i > userProgress.currentUnit;
             const isMastered = userProgress.masteredUnits.includes(i);
             html += `
-                <div class="unit-card p-6 ${isLocked ? 'opacity-50 grayscale' : (i === userProgress.currentUnit ? 'active-unit border-yellow-500 shadow-lg' : 'bg-white')}">
-                    <div class="flex justify-between items-center mb-4">
-                        <h3 class="font-bold text-lg">${u.title}</h3>
-                        ${isMastered ? `<button onclick="window.resetUnit(${i})" class="text-[10px] bg-slate-100 px-2 py-1 rounded font-bold text-slate-500">RESET</button>` : ''}
-                    </div>
-                    <button onclick="window.startModule(${i})" class="w-full ${isMastered ? 'bg-emerald-600' : (isLocked ? 'bg-slate-300' : 'bg-slate-800')} text-white py-3 rounded-xl font-bold transition-all active:scale-95">
-                        ${isMastered ? 'Review Module' : (isLocked ? 'Locked' : 'Start Module')}
+                <div class="unit-card p-6 ${isLocked ? 'opacity-50' : (i === userProgress.currentUnit ? 'active-unit' : 'bg-white')}">
+                    <h3 class="font-bold text-lg">${u.title}</h3>
+                    <button onclick="window.startModule(${i})" class="w-full mt-4 ${isMastered ? 'bg-emerald-600' : (isLocked ? 'bg-slate-300' : 'bg-slate-800')} text-white py-3 rounded-xl font-bold">
+                        ${isMastered ? 'Review' : (isLocked ? 'Locked' : 'Start')}
                     </button>
                 </div>`;
         });
-        
-        // Final Exam Placeholder
-        if(userProgress.currentUnit >= unitData.length) {
-            html += `<div class="p-6 bg-yellow-500 rounded-2xl text-center font-black text-slate-900 uppercase italic">Final Exam Ready!</div>`;
-        }
-
         main.innerHTML = html + `</div>`;
     }
 
@@ -129,36 +130,24 @@
         if (unitId > userProgress.currentUnit) return;
         const q = unitData[unitId].questions[0];
         document.getElementById('main-content').innerHTML = `
-            <div class="bg-white rounded-3xl p-8 shadow-lg animate-in fade-in duration-300">
-                <p class="text-[10px] font-bold text-slate-400 uppercase mb-2">Unit ${unitId + 1} Question</p>
+            <div class="bg-white rounded-3xl p-8 shadow-lg">
                 <h2 class="text-xl font-bold mb-6">${q.q}</h2>
                 ${q.a.map((opt, idx) => `<button onclick="window.check(${unitId}, ${idx}, ${q.c})" class="sim-option">${opt}</button>`).join('')}
-                <button onclick="renderDashboard()" class="w-full mt-8 text-slate-400 text-sm font-bold border-t pt-4">Exit to Dashboard</button>
+                <button onclick="renderDashboard()" class="w-full mt-8 text-slate-400 text-sm font-bold">Back</button>
             </div>`;
     };
 
     window.check = async (unitId, selected, correct) => {
-        const btns = document.querySelectorAll('.sim-option');
         if (selected === correct) {
-            btns[selected].style.background = "#059669";
             if (!userProgress.masteredUnits.includes(unitId)) {
                 userProgress.masteredUnits.push(unitId);
                 if (userProgress.currentUnit === unitId) userProgress.currentUnit++;
                 save();
             }
-            setTimeout(renderDashboard, 800);
+            renderDashboard();
         } else {
-            btns[selected].style.background = "#dc2626";
-            setTimeout(() => { btns[selected].style.background = "#334155"; }, 600);
+            alert("Incorrect. Review your manual!");
         }
-    };
-
-    window.resetUnit = (id) => {
-        userProgress.masteredUnits = userProgress.masteredUnits.filter(u => u !== id);
-        // Reset currentUnit to the lowest un-mastered unit
-        userProgress.currentUnit = Math.min(...unitData.map(u => u.id).filter(u => !userProgress.masteredUnits.includes(u)));
-        save();
-        renderDashboard();
     };
 
     function save() {
@@ -169,7 +158,7 @@
         }
     }
 
-    signInAnonymously(auth).catch(() => renderDashboard());
+    signInAnonymously(auth);
 </script>
 </body>
 </html>
