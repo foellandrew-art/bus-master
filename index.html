@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>MN School Bus Master: Renewal Prep</title>
+    <title>MN Bus Master: Cloud Sync</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
         body { font-family: 'Segoe UI', system-ui, -apple-system, sans-serif; background-color: #f1f5f9; color: #0f172a; -webkit-tap-highlight-color: transparent; }
@@ -18,20 +18,18 @@
         .progress-dot.complete { background: #059669; }
         .progress-dot.current { background: #f59e0b; animation: pulse 2s infinite; }
         @keyframes pulse { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.3); } }
-        .fade-in { animation: fadeIn 0.4s ease-out; }
+        .fade-in { animation: fadeIn 0.3s ease-out; }
         @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
-        #modal-overlay { background: rgba(15, 23, 42, 0.8); backdrop-filter: blur(4px); }
     </style>
 </head>
 <body class="p-4 md:p-8">
 
 <div class="container mx-auto max-w-4xl">
-    <!-- Header -->
     <header class="bg-slate-900 rounded-3xl p-6 text-white mb-8 shadow-xl border-b-4 border-yellow-500">
         <div class="flex flex-col md:flex-row justify-between items-center gap-4">
             <div>
-                <h1 class="text-2xl font-black italic tracking-tighter uppercase">Bus Master Renewal</h1>
-                <p id="user-display" class="text-slate-400 text-xs tracking-widest uppercase">Initializing...</p>
+                <h1 class="text-2xl font-black italic uppercase">Bus Master Renewal</h1>
+                <p id="user-display" class="text-slate-400 text-xs tracking-widest uppercase">Syncing to Cloud...</p>
             </div>
             <div id="overall-progress" class="flex gap-2 bg-slate-800 p-3 rounded-full"></div>
         </div>
@@ -40,249 +38,129 @@
     <main id="main-content">
         <div class="flex flex-col items-center justify-center p-20 text-slate-400">
             <div class="animate-spin rounded-full h-12 w-12 border-b-2 border-yellow-500 mb-4"></div>
-            <p id="loading-text">Loading app modules...</p>
+            <p>Connecting to your personal database...</p>
         </div>
     </main>
 </div>
 
-<!-- Reset Modal -->
-<div id="modal-container" class="hidden fixed inset-0 z-50 flex items-center justify-center p-4">
-    <div id="modal-overlay" class="absolute inset-0"></div>
-    <div class="bg-white rounded-3xl p-8 max-w-sm w-full relative z-10 shadow-2xl text-center">
-        <div class="text-4xl mb-4">🔄</div>
-        <h3 class="text-xl font-bold text-slate-800 mb-2">Reset Unit?</h3>
-        <p class="text-slate-500 text-sm mb-6">Take a fresh review quiz. Your global progress will be preserved.</p>
-        <div class="flex gap-3">
-            <button onclick="closeModal()" class="flex-1 bg-slate-100 py-3 rounded-xl font-bold">Cancel</button>
-            <button id="confirm-reset-btn" class="flex-1 bg-orange-500 py-3 rounded-xl font-bold text-white">Confirm</button>
-        </div>
-    </div>
-</div>
-
 <script type="module">
     import { initializeApp } from "https://www.gstatic.com/firebasejs/11.1.0/firebase-app.js";
-    import { getFirestore, doc, setDoc, getDoc, onSnapshot } from "https://www.gstatic.com/firebasejs/11.1.0/firebase-firestore.js";
-    import { getAuth, signInAnonymously, onAuthStateChanged, signInWithCustomToken } from "https://www.gstatic.com/firebasejs/11.1.0/firebase-auth.js";
+    import { getFirestore, doc, setDoc, onSnapshot } from "https://www.gstatic.com/firebasejs/11.1.0/firebase-firestore.js";
+    import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.1.0/firebase-auth.js";
 
-    // Configuration & State
-    let db = null;
-    let auth = null;
-    let appId = typeof __app_id !== 'undefined' ? __app_id : 'school-bus-master';
-    let isCloudEnabled = false;
-    let currentUser = null;
+    // --- YOUR PERSONAL CLOUD CONFIG ---
+    const firebaseConfig = {
+        apiKey: "AIzaSyAln7AfmSDkFabBJj07_3YAtb-Ci-umA5c",
+        authDomain: "bus-master-a876b.firebaseapp.com",
+        projectId: "bus-master-a876b",
+        storageBucket: "bus-master-a876b.firebasestorage.app",
+        messagingSenderId: "269697206448",
+        appId: "1:269697206448:web:cce336f7bdb3e2805f5375",
+        measurementId: "G-27P10172R5"
+    };
+
+    // Initialize Firebase
+    const app = initializeApp(firebaseConfig);
+    const auth = getAuth(app);
+    const db = getFirestore(app);
+    const appId = 'bus-master-app';
+
     let userProgress = { currentUnit: 0, masteredUnits: [] };
 
-    // Curriculum Data
+    // --- UNITS ---
     const unitData = [
-        { 
-            id: 0, title: "Unit 1: Mirror Adjustment & Danger Zone", 
-            summary: "The Danger Zone is the 10-foot area around the bus. Students must walk 10 feet in front of the bus to be seen.",
-            pool: [
-                { q: "What is the blind spot distance behind a standard school bus?", a: "400 feet", o: ["50 feet", "100 feet", "400 feet"] },
-                { q: "Which mirror shows the ground directly in front of the bus?", a: "Crossview Mirror", o: ["Flat", "Convex", "Crossview"] }
-            ]
-        },
-        { 
-            id: 1, title: "Unit 2: Pre-Trip & Air Brake Safety", 
-            summary: "Drivers are legally responsible for air-worthiness. Low air warnings must activate at 60 PSI.",
-            pool: [
-                { q: "At what pressure should the low air warning activate?", a: "60 PSI", o: ["20", "60", "100"] },
-                { q: "Minimum steer tire tread depth?", a: "4/32 inch", o: ["2/32", "4/32", "6/32"] }
-            ]
-        },
-        { 
-            id: 2, title: "Unit 3: 8-Light Law & Loading", 
-            summary: "Ambers at 100ft (slow zones) or 300ft (fast zones). Red lights activate when door opens.",
-            pool: [
-                { q: "In a 45mph zone, activate Ambers at least:", a: "300 feet back", o: ["100", "200", "300"] }
-            ]
-        },
-        { 
-            id: 3, title: "Unit 4: Railroad Crossing Mastery", 
-            summary: "Stop 15 to 50 feet from the rail. Silence all fans and open the door.",
-            pool: [
-                { q: "Mandatory stop distance from nearest rail?", a: "15 to 50 feet", o: ["5-10", "15-50", "100"] }
-            ]
-        }
+        { id: 0, title: "Unit 1: Mirror & Danger Zone", summary: "The 10ft Danger Zone is critical. Mirrors must be adjusted to see students walking 10ft in front." },
+        { id: 1, title: "Unit 2: Pre-Trip & Air Brakes", summary: "Check for 60 PSI warning and 4/32 steer tire tread. You are legally responsible for air worthiness." },
+        { id: 2, title: "Unit 3: 8-Light & Loading", summary: "Ambers at 100/300ft. Reds and stop arm only when door opens. Never for RR crossings." },
+        { id: 3, title: "Unit 4: Railroad Crossings", summary: "Stop 15-50ft. Silence fans. Open door and window. Look and Listen." }
     ];
 
-    // Initialization Logic
-    async function init() {
+    // --- CLOUD BRAIN ---
+    async function startApp() {
         try {
-            // Attempt Firebase setup
-            if (typeof __firebase_config !== 'undefined' && __firebase_config) {
-                const firebaseConfig = JSON.parse(__firebase_config);
-                const app = initializeApp(firebaseConfig);
-                db = getFirestore(app);
-                auth = getAuth(app);
-                
-                if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
-                    await signInWithCustomToken(auth, __initial_auth_token);
-                } else {
-                    await signInAnonymously(auth);
-                }
-
-                onAuthStateChanged(auth, (user) => {
-                    if (user) {
-                        currentUser = user;
-                        isCloudEnabled = true;
-                        document.getElementById('user-display').innerText = `Sync: Active`;
-                        syncCloudData();
-                    }
-                });
-            } else {
-                throw new Error("No config");
-            }
+            await signInAnonymously(auth);
         } catch (e) {
-            switchToLocal();
+            console.error("Cloud Error", e);
+            renderDashboard(); // Fallback if cloud fails
         }
     }
 
-    function switchToLocal() {
-        isCloudEnabled = false;
-        document.getElementById('user-display').innerText = `Mode: Local Only`;
-        const localData = localStorage.getItem('bus_master_v1');
-        if (localData) userProgress = JSON.parse(localData);
-        renderProgressDots();
-        showDashboard();
-    }
-
-    function syncCloudData() {
-        const userDoc = doc(db, 'artifacts', appId, 'users', currentUser.uid, 'profile');
-        onSnapshot(userDoc, (docSnap) => {
-            if (docSnap.exists()) {
-                userProgress = docSnap.data().progress || { currentUnit: 0, masteredUnits: [] };
-            }
-            renderProgressDots();
-            showDashboard();
-        }, (err) => switchToLocal());
-    }
+    onAuthStateChanged(auth, (user) => {
+        if (user) {
+            document.getElementById('user-display').innerText = `Sync: ON (ID: ${user.uid.substring(0,5)})`;
+            // This path saves to: artifacts/bus-master/users/USER_ID/data
+            const userDoc = doc(db, 'artifacts', appId, 'users', user.uid, 'data');
+            onSnapshot(userDoc, (docSnap) => {
+                if (docSnap.exists()) {
+                    userProgress = docSnap.data().progress || userProgress;
+                }
+                renderDashboard();
+            }, (err) => {
+                console.error("Database error", err);
+                renderDashboard();
+            });
+        }
+    });
 
     async function saveProgress() {
-        if (isCloudEnabled && currentUser) {
-            const userDoc = doc(db, 'artifacts', appId, 'users', currentUser.uid, 'profile');
+        if (auth.currentUser) {
+            const userDoc = doc(db, 'artifacts', appId, 'users', auth.currentUser.uid, 'data');
             await setDoc(userDoc, { progress: userProgress }, { merge: true });
-        } else {
-            localStorage.setItem('bus_master_v1', JSON.stringify(userProgress));
         }
     }
 
-    // UI Handlers
-    function renderProgressDots() {
-        const dots = document.getElementById('overall-progress');
-        if (!dots) return;
-        dots.innerHTML = '';
-        unitData.forEach((_, i) => {
-            let status = userProgress.masteredUnits.includes(i) ? 'complete' : (i === userProgress.currentUnit ? 'current' : 'pending');
-            dots.innerHTML += `<div class="progress-dot ${status}"></div>`;
-        });
-    }
-
-    function showDashboard() {
+    // --- UI TOOLS ---
+    function renderDashboard() {
+        renderProgressDots();
         const main = document.getElementById('main-content');
-        let html = `<h2 class="text-xl font-bold text-slate-700 mb-6 uppercase tracking-widest">Mastery Modules</h2>`;
+        let html = `<div class="fade-in">`;
         unitData.forEach((u, i) => {
             const isLocked = i > userProgress.currentUnit;
             const isMastered = userProgress.masteredUnits.includes(i);
             html += `
-                <div class="unit-card p-6 mb-4 border ${isLocked ? 'locked' : (i === userProgress.currentUnit ? 'active-unit' : 'border-emerald-200 bg-emerald-50')}">
-                    <div class="flex justify-between items-start mb-4">
-                        <div>
-                            <p class="text-[10px] font-bold text-slate-400 uppercase">Module ${i + 1}</p>
-                            <h3 class="text-lg font-bold text-slate-800 leading-tight">${u.title}</h3>
-                        </div>
-                        ${isMastered ? `<button onclick="window.openResetModal(${i})" class="bg-orange-100 text-orange-600 px-3 py-1 rounded-full text-[10px] font-bold">RESET</button>` : ''}
-                    </div>
-                    <button onclick="window.startStudy(${i})" class="w-full ${isMastered ? 'bg-emerald-600' : 'bg-slate-800'} text-white py-4 rounded-2xl font-bold shadow-lg">
-                        ${isMastered ? 'Review' : (isLocked ? 'Locked' : 'Start')}
+                <div class="unit-card p-6 mb-4 ${isLocked ? 'locked' : (i === userProgress.currentUnit ? 'active-unit' : 'border-emerald-100 bg-emerald-50')}">
+                    <h3 class="font-bold text-lg mb-4">${u.title}</h3>
+                    <button onclick="window.startModule(${i})" class="w-full ${isMastered ? 'bg-emerald-600' : 'bg-slate-800'} text-white py-3 rounded-xl font-bold">
+                        ${isMastered ? 'Review' : (isLocked ? 'Locked' : 'Start Unit')}
                     </button>
-                </div>
-            `;
+                </div>`;
         });
+        html += `</div>`;
         main.innerHTML = html;
     }
 
-    window.startStudy = (id) => {
+    function renderProgressDots() {
+        const dots = document.getElementById('overall-progress');
+        dots.innerHTML = unitData.map((_, i) => {
+            const status = userProgress.masteredUnits.includes(i) ? 'complete' : (i === userProgress.currentUnit ? 'current' : 'pending');
+            return `<div class="progress-dot ${status}"></div>`;
+        }).join('');
+    }
+
+    window.startModule = (id) => {
         const u = unitData[id];
         const main = document.getElementById('main-content');
         main.innerHTML = `
             <div class="bg-white rounded-3xl p-8 shadow-lg fade-in">
                 <h2 class="text-2xl font-black mb-4">${u.title}</h2>
-                <div class="bg-slate-50 p-6 rounded-2xl mb-8 border border-slate-100">
-                   <p class="text-slate-600 leading-relaxed">${u.summary}</p>
-                </div>
-                <div class="flex flex-col gap-3">
-                    <button onclick="window.startQuiz(${id})" class="w-full bg-orange-500 text-white py-5 rounded-2xl font-black text-lg shadow-xl shadow-orange-200">TAKE QUIZ</button>
-                    <button onclick="window.location.reload()" class="w-full bg-slate-100 text-slate-500 py-4 rounded-2xl font-bold">BACK</button>
-                </div>
-            </div>
-        `;
+                <p class="text-slate-600 mb-8">${u.summary}</p>
+                <button onclick="window.completeUnit(${id})" class="w-full bg-orange-500 text-white py-4 rounded-xl font-bold text-lg">FINISH UNIT</button>
+                <button onclick="window.renderDashboard()" class="w-full mt-4 text-slate-400 font-bold">CANCEL</button>
+            </div>`;
     };
 
-    window.startQuiz = (id) => {
-        const pool = unitData[id].pool;
-        window.currentQuiz = { unitId: id, questions: [...pool].sort(() => 0.5 - Math.random()), index: 0, correct: 0 };
-        renderQuestion();
-    };
-
-    function renderQuestion() {
-        const q = window.currentQuiz.questions[window.currentQuiz.index];
-        const main = document.getElementById('main-content');
-        main.innerHTML = `
-            <div class="bg-slate-900 rounded-3xl p-8 text-white fade-in min-h-[400px] flex flex-col justify-between">
-                <div>
-                    <h3 class="text-xl font-bold mb-10">${q.q}</h3>
-                    <div class="space-y-3">
-                        ${q.o.map(opt => `<button onclick="window.answer('${opt}')" class="sim-option">${opt}</button>`).join('')}
-                    </div>
-                </div>
-            </div>
-        `;
-    }
-
-    window.answer = (choice) => {
-        const q = window.currentQuiz.questions[window.currentQuiz.index];
-        const isCorrect = choice === q.a;
-        if (isCorrect) window.currentQuiz.correct++;
-        
-        const btns = document.querySelectorAll('.sim-option');
-        btns.forEach(b => {
-            if (b.innerText === q.a) b.classList.add('correct');
-            else if (b.innerText === choice && !isCorrect) b.classList.add('wrong');
-            b.disabled = true;
-        });
-
-        setTimeout(() => {
-            window.currentQuiz.index++;
-            if (window.currentQuiz.index < window.currentQuiz.questions.length) renderQuestion();
-            else finishQuiz();
-        }, 1000);
-    };
-
-    async function finishQuiz() {
-        const passed = window.currentQuiz.correct === window.currentQuiz.questions.length;
-        if (passed) {
-            if (!userProgress.masteredUnits.includes(window.currentQuiz.unitId)) {
-                userProgress.masteredUnits.push(window.currentQuiz.unitId);
-                if (userProgress.currentUnit === window.currentQuiz.unitId) userProgress.currentUnit++;
-                await saveProgress();
-            }
-        }
-        window.location.reload();
-    }
-
-    window.openResetModal = (id) => {
-        document.getElementById('modal-container').classList.remove('hidden');
-        document.getElementById('confirm-reset-btn').onclick = async () => {
-            userProgress.masteredUnits = userProgress.masteredUnits.filter(uid => uid !== id);
+    window.completeUnit = async (id) => {
+        if (!userProgress.masteredUnits.includes(id)) {
+            userProgress.masteredUnits.push(id);
+            if (userProgress.currentUnit === id) userProgress.currentUnit++;
             await saveProgress();
-            window.location.reload();
-        };
+        }
+        renderDashboard();
     };
 
-    window.closeModal = () => document.getElementById('modal-container').classList.add('hidden');
+    window.renderDashboard = renderDashboard;
 
-    init();
+    startApp();
 </script>
 </body>
 </html>
