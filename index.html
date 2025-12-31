@@ -7,7 +7,7 @@
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
         body { font-family: 'Segoe UI', system-ui, -apple-system, sans-serif; background-color: #f1f5f9; color: #0f172a; -webkit-tap-highlight-color: transparent; }
-        .unit-card { background: white; border-radius: 1.5rem; transition: all 0.3s ease; border: 1px solid #e2e8f0; position: relative; overflow: hidden; }
+        .unit-card { background: white; border-radius: 1.5rem; transition: all 0.3s ease; border: 1px solid #e2e8f0; position: relative; overflow: hidden; margin-bottom: 1rem; }
         .active-unit { border: 3px solid #f59e0b; box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1); }
         .sim-option { cursor: pointer; display: block; padding: 1.1rem; border-radius: 0.75rem; background: #334155; margin-top: 0.6rem; border: 2px solid transparent; text-align: left; width: 100%; color: white; transition: 0.2s; }
         .progress-dot { width: 10px; height: 10px; border-radius: 50%; background: #cbd5e1; }
@@ -23,7 +23,7 @@
         <div class="flex flex-col md:flex-row justify-between items-center gap-4">
             <div>
                 <h1 class="text-2xl font-black italic uppercase text-yellow-500">Bus Master</h1>
-                <p id="user-display" class="text-slate-400 text-xs tracking-widest uppercase font-bold">Connecting...</p>
+                <p id="user-display" class="text-slate-400 text-xs tracking-widest uppercase font-bold">Initializing...</p>
             </div>
             <div id="overall-progress" class="flex gap-2 bg-slate-800 p-3 rounded-full"></div>
         </div>
@@ -33,7 +33,6 @@
         <div class="flex flex-col items-center justify-center py-20 text-slate-500">
             <div class="animate-spin rounded-full h-12 w-12 border-b-2 border-yellow-500 mb-4"></div>
             <p id="loading-msg">Connecting to your personal server...</p>
-            <button id="force-start" class="hidden mt-4 text-yellow-600 font-bold underline">Click here to start anyway</button>
         </div>
     </main>
 </div>
@@ -60,47 +59,36 @@
     let userProgress = { currentUnit: 0, masteredUnits: [] };
     let hasLoaded = false;
 
-    // Curriculum Data
     const unitData = [
-        { id: 0, title: "Unit 1: Danger Zones", questions: [{ q: "How far does the Danger Zone extend?", a: ["5ft", "10ft", "2ft", "15ft"], c: 1 }] },
+        { id: 0, title: "Unit 1: Danger Zones", questions: [{ q: "How far does the Danger Zone extend in front of the bus?", a: ["10ft", "20ft", "30ft", "5ft"], c: 2 }] },
         { id: 1, title: "Unit 2: Air Brakes", questions: [{ q: "When should the low air alarm trigger?", a: ["100 PSI", "60 PSI", "20 PSI"], c: 1 }] },
         { id: 2, title: "Unit 3: RR Crossings", questions: [{ q: "Distance to stop from rails?", a: ["5-10ft", "15-50ft", "100ft"], c: 1 }] }
     ];
 
-    // SAFETY SWITCH: If cloud takes > 3 seconds, show the dashboard anyway
+    // AUTOMATIC LOCAL FALLBACK after 2.5 seconds
     setTimeout(() => {
         if (!hasLoaded) {
-            document.getElementById('force-start').classList.remove('hidden');
-            document.getElementById('loading-msg').innerText = "Cloud is slow. You can start in offline mode.";
+            console.log("Cloud slow - falling back to local storage");
+            const localData = localStorage.getItem('bus_master_local');
+            if (localData) userProgress = JSON.parse(localData);
+            document.getElementById('user-display').innerText = "Mode: Local (Offline)";
+            renderDashboard();
         }
-    }, 3000);
-
-    document.getElementById('force-start').onclick = () => renderDashboard();
+    }, 2500);
 
     onAuthStateChanged(auth, async (user) => {
         if (user) {
-            document.getElementById('user-display').innerText = `Sync: ON (ID: ${user.uid.substring(0,5)})`;
             const userDocRef = doc(db, 'artifacts', appId, 'users', user.uid, 'data');
-            
-            try {
-                const docSnap = await getDoc(userDocRef);
-                if (!docSnap.exists()) {
-                    await setDoc(userDocRef, { progress: userProgress });
-                }
-
-                onSnapshot(userDocRef, (snap) => {
-                    if (snap.exists()) {
-                        userProgress = snap.data().progress;
-                        hasLoaded = true;
-                        renderDashboard();
-                    }
-                }, (error) => {
-                    console.log("Offline mode active");
+            onSnapshot(userDocRef, (snap) => {
+                if (snap.exists() && !hasLoaded) {
+                    userProgress = snap.data().progress;
+                    hasLoaded = true;
+                    document.getElementById('user-display').innerText = `Sync: ON (ID: ${user.uid.substring(0,4)})`;
                     renderDashboard();
-                });
-            } catch (e) {
-                renderDashboard();
-            }
+                }
+            }, (err) => {
+                if (!hasLoaded) renderDashboard();
+            });
         }
     });
 
@@ -118,9 +106,9 @@
             const isLocked = i > userProgress.currentUnit;
             const isMastered = userProgress.masteredUnits.includes(i);
             html += `
-                <div class="unit-card p-6 ${isLocked ? 'opacity-50 grayscale' : (i === userProgress.currentUnit ? 'active-unit' : 'bg-emerald-50')}">
+                <div class="unit-card p-6 ${isLocked ? 'opacity-50 grayscale' : (i === userProgress.currentUnit ? 'active-unit border-yellow-500' : 'bg-white')}">
                     <h3 class="font-bold text-lg">${u.title}</h3>
-                    <button onclick="window.startModule(${i})" class="w-full mt-4 ${isMastered ? 'bg-emerald-600' : 'bg-slate-800'} text-white py-3 rounded-xl font-bold">
+                    <button onclick="window.startModule(${i})" class="w-full mt-4 ${isMastered ? 'bg-emerald-600' : (isLocked ? 'bg-slate-300' : 'bg-slate-800')} text-white py-3 rounded-xl font-bold">
                         ${isMastered ? 'Review' : (isLocked ? 'Locked' : 'Start')}
                     </button>
                 </div>`;
@@ -129,176 +117,41 @@
     }
 
     window.startModule = (unitId) => {
+        if (unitId > userProgress.currentUnit) return;
         const q = unitData[unitId].questions[0];
         document.getElementById('main-content').innerHTML = `
             <div class="bg-white rounded-3xl p-8 shadow-lg">
                 <h2 class="text-xl font-bold mb-6">${q.q}</h2>
                 ${q.a.map((opt, idx) => `<button onclick="window.check(${unitId}, ${idx}, ${q.c})" class="sim-option">${opt}</button>`).join('')}
-                <button onclick="location.reload()" class="w-full mt-8 text-slate-400 text-sm font-bold">Cancel & Go Back</button>
+                <button onclick="renderDashboard()" class="w-full mt-8 text-slate-400 text-sm font-bold">Go Back</button>
             </div>`;
     };
 
     window.check = async (unitId, selected, correct) => {
+        const btns = document.querySelectorAll('.sim-option');
         if (selected === correct) {
+            btns[selected].style.background = "#059669";
             if (!userProgress.masteredUnits.includes(unitId)) {
                 userProgress.masteredUnits.push(unitId);
                 if (userProgress.currentUnit === unitId) userProgress.currentUnit++;
                 
+                // Save to both local and cloud
+                localStorage.setItem('bus_master_local', JSON.stringify(userProgress));
                 if (auth.currentUser) {
                     const userDocRef = doc(db, 'artifacts', appId, 'users', auth.currentUser.uid, 'data');
-                    await setDoc(userDocRef, { progress: userProgress }).catch(e => console.log("Local save only"));
+                    setDoc(userDocRef, { progress: userProgress }, { merge: true });
                 }
             }
-            renderDashboard();
+            setTimeout(renderDashboard, 800);
         } else {
-            const btns = document.querySelectorAll('.sim-option');
             btns[selected].style.background = "#dc2626";
-            setTimeout(() => { btns[selected].style.background = "#334155"; }, 500);
+            setTimeout(() => { btns[selected].style.background = "#334155"; }, 600);
         }
     };
 
-    signInAnonymously(auth).catch(() => {
-        renderDashboard(); // Start anyway if auth fails
-    });
+    signInAnonymously(auth).catch(() => renderDashboard());
 </script>
 </body>
 </html>
 
- html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>MN Bus Master: Practice Mode</title>
-    <script src="https://cdn.tailwindcss.com"></script>
-    <style>
-        body { font-family: 'Segoe UI', system-ui, -apple-system, sans-serif; background-color: #f1f5f9; color: #0f172a; -webkit-tap-highlight-color: transparent; }
-        .unit-card { background: white; border-radius: 1.5rem; transition: all 0.3s ease; border: 1px solid #e2e8f0; position: relative; overflow: hidden; }
-        .active-unit { border: 3px solid #f59e0b; box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1); }
-        .sim-option { cursor: pointer; display: block; padding: 1.1rem; border-radius: 0.75rem; background: #334155; margin-top: 0.6rem; border: 2px solid transparent; text-align: left; width: 100%; color: white; transition: 0.2s; }
-        .sim-option.correct { background: #059669 !important; border-color: #34d399 !important; }
-        .sim-option.wrong { background: #dc2626 !important; border-color: #f87171 !important; }
-        .progress-dot { width: 10px; height: 10px; border-radius: 50%; background: #cbd5e1; }
-        .progress-dot.complete { background: #059669; }
-        .progress-dot.current { background: #f59e0b; animation: pulse 2s infinite; }
-        @keyframes pulse { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.3); } }
-    </style>
-</head>
-<body class="p-4 md:p-8">
-
-<div class="container mx-auto max-w-4xl">
-    <header class="bg-slate-900 rounded-3xl p-6 text-white mb-8 shadow-xl border-b-4 border-yellow-500">
-        <div class="flex flex-col md:flex-row justify-between items-center gap-4">
-            <div>
-                <h1 class="text-2xl font-black italic uppercase text-yellow-500">Bus Master</h1>
-                <p id="user-display" class="text-slate-400 text-xs tracking-widest uppercase font-bold">Initializing...</p>
-            </div>
-            <div id="overall-progress" class="flex gap-2 bg-slate-800 p-3 rounded-full"></div>
-        </div>
-    </header>
-
-    <main id="main-content">
-        <div class="flex flex-col items-center justify-center py-20 text-slate-500">
-            <div class="animate-spin rounded-full h-12 w-12 border-b-2 border-yellow-500 mb-4"></div>
-            <p>Syncing with personal server...</p>
-        </div>
-    </main>
-</div>
-
-<script type="module">
-    import { initializeApp } from "https://www.gstatic.com/firebasejs/11.1.0/firebase-app.js";
-    import { getFirestore, doc, setDoc, getDoc, onSnapshot } from "https://www.gstatic.com/firebasejs/11.1.0/firebase-firestore.js";
-    import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.1.0/firebase-auth.js";
-
-    const firebaseConfig = {
-        apiKey: "AIzaSyAln7AfmSDkFabBJj07_3YAtb-Ci-umA5c",
-        authDomain: "bus-master-a876b.firebaseapp.com",
-        projectId: "bus-master-a876b",
-        storageBucket: "bus-master-a876b.firebasestorage.app",
-        messagingSenderId: "269697206448",
-        appId: "1:269697206448:web:cce336f7bdb3e2805f5375"
-    };
-
-    const app = initializeApp(firebaseConfig);
-    const auth = getAuth(app);
-    const db = getFirestore(app);
-    const appId = 'bus-master-app';
-
-    let userProgress = { currentUnit: 0, masteredUnits: [] };
-
-    const unitData = [
-        { id: 0, title: "Unit 1: Danger Zones", questions: [{ q: "How far does the Danger Zone extend?", a: ["5ft", "10ft", "2ft", "15ft"], c: 1 }] },
-        { id: 1, title: "Unit 2: Air Brakes", questions: [{ q: "When should the low air alarm trigger?", a: ["100 PSI", "60 PSI", "20 PSI"], c: 1 }] },
-        { id: 2, title: "Unit 3: RR Crossings", questions: [{ q: "Distance to stop from rails?", a: ["5-10ft", "15-50ft", "100ft"], c: 1 }] }
-    ];
-
-    onAuthStateChanged(auth, async (user) => {
-        if (user) {
-            document.getElementById('user-display').innerText = `Sync: ON (ID: ${user.uid.substring(0,5)})`;
-            const userDocRef = doc(db, 'artifacts', appId, 'users', user.uid, 'data');
-            
-            // Check if user has data; if not, create it
-            const docSnap = await getDoc(userDocRef);
-            if (!docSnap.exists()) {
-                await setDoc(userDocRef, { progress: userProgress });
-            }
-
-            // Listen for changes
-            onSnapshot(userDocRef, (snap) => {
-                if (snap.exists()) {
-                    userProgress = snap.data().progress;
-                    renderDashboard();
-                }
-            });
-        }
-    });
-
-    function renderDashboard() {
-        const main = document.getElementById('main-content');
-        document.getElementById('overall-progress').innerHTML = unitData.map((_, i) => {
-            const status = userProgress.masteredUnits.includes(i) ? 'complete' : (i === userProgress.currentUnit ? 'current' : 'pending');
-            return `<div class="progress-dot ${status}"></div>`;
-        }).join('');
-
-        let html = `<div class="space-y-4">`;
-        unitData.forEach((u, i) => {
-            const isLocked = i > userProgress.currentUnit;
-            const isMastered = userProgress.masteredUnits.includes(i);
-            html += `
-                <div class="unit-card p-6 ${isLocked ? 'opacity-50 grayscale' : (i === userProgress.currentUnit ? 'active-unit' : 'bg-emerald-50')}">
-                    <h3 class="font-bold text-lg">${u.title}</h3>
-                    <button onclick="window.startModule(${i})" class="w-full mt-4 ${isMastered ? 'bg-emerald-600' : 'bg-slate-800'} text-white py-3 rounded-xl font-bold">
-                        ${isMastered ? 'Review' : (isLocked ? 'Locked' : 'Start')}
-                    </button>
-                </div>`;
-        });
-        main.innerHTML = html + `</div>`;
-    }
-
-    window.startModule = (unitId) => {
-        const q = unitData[unitId].questions[0];
-        document.getElementById('main-content').innerHTML = `
-            <div class="bg-white rounded-3xl p-8 shadow-lg">
-                <h2 class="text-xl font-bold mb-6">${q.q}</h2>
-                ${q.a.map((opt, idx) => `<button onclick="window.check(${unitId}, ${idx}, ${q.c})" class="sim-option">${opt}</button>`).join('')}
-            </div>`;
-    };
-
-    window.check = async (unitId, selected, correct) => {
-        if (selected === correct) {
-            if (!userProgress.masteredUnits.includes(unitId)) {
-                userProgress.masteredUnits.push(unitId);
-                if (userProgress.currentUnit === unitId) userProgress.currentUnit++;
-                const userDocRef = doc(db, 'artifacts', appId, 'users', auth.currentUser.uid, 'data');
-                await setDoc(userDocRef, { progress: userProgress });
-            }
-            renderDashboard();
-        } else {
-            alert("Try again!");
-        }
-    };
-
-    signInAnonymously(auth).catch(console.error);
-</script>
-</body>
-</html>
+    
