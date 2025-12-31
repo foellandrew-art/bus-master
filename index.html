@@ -7,12 +7,14 @@
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
         body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; background-color: #f8fafc; color: #1e293b; touch-action: manipulation; }
-        .unit-card { background: white; border-radius: 1.25rem; border: 1px solid #e2e8f0; margin-bottom: 1rem; padding: 1.25rem; box-shadow: 0 1px 3px rgba(0,0,0,0.05); }
+        .unit-card { background: white; border-radius: 1.25rem; border: 1px solid #e2e8f0; margin-bottom: 1rem; padding: 1.25rem; box-shadow: 0 1px 3px rgba(0,0,0,0.05); transition: transform 0.1s; }
+        .unit-card:active { transform: scale(0.98); }
         .active-unit { border: 3px solid #f59e0b; }
-        .sim-option { cursor: pointer; display: block; padding: 1.25rem; border-radius: 1rem; background: #334155; margin-top: 0.75rem; color: white; width: 100%; text-align: left; font-size: 1.1rem; border: none; }
+        .sim-option { cursor: pointer; display: block; padding: 1.25rem; border-radius: 1rem; background: #334155; margin-top: 0.75rem; color: white; width: 100%; text-align: left; font-size: 1.1rem; border: none; font-weight: 500; }
         .btn-start { background-color: #1e293b; color: white; width: 100%; padding: 1rem; border-radius: 0.75rem; font-weight: 800; margin-top: 1rem; text-transform: uppercase; letter-spacing: 0.05em; }
-        .status-pill { background: #e2e8f0; color: #64748b; padding: 0.25rem 0.75rem; border-radius: 9999px; font-size: 0.7rem; font-weight: 700; }
-        .status-pill.online { background: #dcfce7; color: #166534; }
+        .status-pill { background: #e2e8f0; color: #64748b; padding: 0.25rem 0.75rem; border-radius: 9999px; font-size: 0.7rem; font-weight: 700; transition: all 0.3s ease; }
+        .status-pill.online { background: #dcfce7; color: #166534; border: 1px solid #166534; }
+        .status-pill.offline { background: #fee2e2; color: #991b1b; }
     </style>
 </head>
 <body class="p-4">
@@ -21,7 +23,7 @@
     <header class="flex justify-between items-center mb-6 pt-2">
         <div>
             <h1 class="text-2xl font-black text-slate-900 tracking-tight">BUS MASTER</h1>
-            <div id="sync-status" class="status-pill inline-block mt-1">CONNECTING...</div>
+            <div id="sync-status" class="status-pill inline-block mt-1 uppercase text-[9px]">Connecting...</div>
         </div>
         <div id="progress-bar" class="flex gap-1"></div>
     </header>
@@ -29,7 +31,7 @@
     <main id="app-content">
         <div class="flex flex-col items-center justify-center py-20 text-slate-400">
             <div class="animate-spin rounded-full h-8 w-8 border-b-2 border-slate-900 mb-4"></div>
-            <p class="font-bold text-sm">LOADING YOUR PROGRESS...</p>
+            <p class="font-bold text-sm text-center italic">Establishing Secure Connection...</p>
         </div>
     </main>
 </div>
@@ -37,8 +39,9 @@
 <script type="module">
     import { initializeApp } from "https://www.gstatic.com/firebasejs/11.1.0/firebase-app.js";
     import { getFirestore, doc, setDoc, onSnapshot } from "https://www.gstatic.com/firebasejs/11.1.0/firebase-firestore.js";
-    import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.1.0/firebase-auth.js";
+    import { getAuth, signInAnonymously } from "https://www.gstatic.com/firebasejs/11.1.0/firebase-auth.js";
 
+    // UPDATED WITH YOUR REAL KEYS
     const firebaseConfig = {
         apiKey: "AIzaSyAln7AfmSDkFabBJj07_3YAtb-Ci-umA5c",
         authDomain: "bus-master-a876b.firebaseapp.com",
@@ -64,18 +67,19 @@
         { id: 5, title: "Unit 6: Medical/Legal", questions: [{ q: "MN Medical Exam frequency?", a: ["1 Year", "2 Years", "4 Years"], c: 1 }] }
     ];
 
-    // Try to load local data immediately so user isn't waiting
+    // Immediate Local Recovery
     const local = localStorage.getItem('bus_master_data');
     if (local) {
         userProgress = JSON.parse(local);
         renderDashboard();
     }
 
-    onAuthStateChanged(auth, async (user) => {
-        if (user) {
+    const initApp = async () => {
+        try {
+            const userCredential = await signInAnonymously(auth);
+            const user = userCredential.user;
             const docRef = doc(db, 'artifacts', appId, 'users', user.uid, 'data');
             
-            // Listen to cloud, update UI when data arrives
             onSnapshot(docRef, (snap) => {
                 if (snap.exists()) {
                     userProgress = snap.data().progress;
@@ -83,53 +87,72 @@
                 } else {
                     setDoc(docRef, { progress: userProgress });
                 }
-                document.getElementById('sync-status').innerText = "SYNC: ON";
-                document.getElementById('sync-status').classList.add('online');
+                updateStatus(true);
                 renderDashboard();
             }, (err) => {
-                document.getElementById('sync-status').innerText = "SYNC: LOCAL";
+                console.warn("Snapshot Error:", err);
+                updateStatus(false);
                 renderDashboard();
             });
+        } catch (e) {
+            console.error("Auth Error:", e);
+            updateStatus(false);
+            renderDashboard();
         }
-    });
+    };
+
+    function updateStatus(isOnline) {
+        const el = document.getElementById('sync-status');
+        if(!el) return;
+        el.innerText = isOnline ? "Sync: Online" : "Sync: Local Mode";
+        el.className = `status-pill inline-block mt-1 uppercase ${isOnline ? 'online' : 'offline'}`;
+    }
 
     function renderDashboard() {
         const main = document.getElementById('app-content');
         const progress = document.getElementById('progress-bar');
-        
+        if (!main) return;
+
         progress.innerHTML = unitData.map((_, i) => {
             const status = userProgress.masteredUnits.includes(i) ? 'bg-emerald-500' : (i === userProgress.currentUnit ? 'bg-amber-500' : 'bg-slate-200');
             return `<div class="h-2 w-4 rounded-full ${status}"></div>`;
         }).join('');
 
-        let html = `<div class="space-y-3">`;
+        let html = `<div class="space-y-3 animate-in fade-in slide-in-from-bottom-2 duration-300">`;
         unitData.forEach((u, i) => {
             const isLocked = i > userProgress.currentUnit;
             const isDone = userProgress.masteredUnits.includes(i);
             html += `
                 <div class="unit-card ${i === userProgress.currentUnit ? 'active-unit' : (isLocked ? 'opacity-40' : 'bg-emerald-50/50')}">
                     <div class="flex justify-between items-start">
-                        <h3 class="font-bold text-lg leading-tight text-slate-800">${u.title}</h3>
-                        ${isDone ? '✅' : ''}
+                        <h3 class="font-bold text-lg text-slate-800 leading-tight">${u.title}</h3>
+                        ${isDone ? '<span class="text-emerald-600 font-bold">✓</span>' : ''}
                     </div>
-                    <button onclick="window.startUnit(${i})" class="btn-start ${isDone ? 'bg-emerald-700' : (isLocked ? 'bg-slate-200 text-slate-400' : 'bg-slate-900')}" ${isLocked ? 'disabled' : ''}>
-                        ${isDone ? 'Review' : (isLocked ? 'Locked' : 'Start')}
+                    <button onclick="window.startUnit(${i})" class="btn-start ${isDone ? 'bg-emerald-700 shadow-sm' : (isLocked ? 'bg-slate-200 text-slate-400' : 'bg-slate-900 shadow-lg')}" ${isLocked ? 'disabled' : ''}>
+                        ${isDone ? 'Review Module' : (isLocked ? 'Locked' : 'Start Module')}
                     </button>
                 </div>`;
         });
-        main.innerHTML = html + `</div>`;
+        
+        html += `
+            <div class="pt-8 text-center">
+                <button onclick="window.clearAllData()" class="text-[10px] text-slate-400 font-bold tracking-widest uppercase border-b border-slate-200 pb-1">Reset All Progress</button>
+            </div>
+        </div>`;
+        
+        main.innerHTML = html;
     }
 
     window.startUnit = (id) => {
         const q = unitData[id].questions[0];
         document.getElementById('app-content').innerHTML = `
-            <div class="bg-white p-6 rounded-3xl shadow-sm border">
-                <p class="text-[10px] font-black text-slate-400 mb-2 uppercase">UNIT ${id+1}</p>
-                <h2 class="text-xl font-bold mb-6 text-slate-900 leading-tight">${q.q}</h2>
+            <div class="bg-white p-6 rounded-3xl shadow-sm border animate-in zoom-in-95 duration-200">
+                <p class="text-[10px] font-black text-slate-400 mb-2 uppercase tracking-tighter">MN Driver Manual Quiz</p>
+                <h2 class="text-xl font-bold mb-6 text-slate-900 leading-snug">${q.q}</h2>
                 <div class="space-y-3">
-                    ${q.a.map((opt, idx) => `<button onclick="window.check(${id}, ${idx}, ${q.c})" class="sim-option">${opt}</button>`).join('')}
+                    ${q.a.map((opt, idx) => `<button onclick="window.check(${id}, ${idx}, ${q.c})" class="sim-option active:bg-slate-700">${opt}</button>`).join('')}
                 </div>
-                <button onclick="renderDashboard()" class="w-full mt-8 text-slate-400 font-bold text-sm">BACK TO MENU</button>
+                <button onclick="renderDashboard()" class="w-full mt-8 text-slate-400 font-black text-xs uppercase tracking-widest">Exit Quiz</button>
             </div>`;
     };
 
@@ -137,28 +160,42 @@
         const btns = document.querySelectorAll('.sim-option');
         if (sel === cor) {
             btns[sel].style.background = "#059669";
+            btns[sel].innerText = "CORRECT ✓";
             if (!userProgress.masteredUnits.includes(uId)) {
                 userProgress.masteredUnits.push(uId);
                 if (userProgress.currentUnit === uId) userProgress.currentUnit++;
                 save();
             }
-            setTimeout(renderDashboard, 700);
+            setTimeout(renderDashboard, 800);
         } else {
             btns[sel].style.background = "#dc2626";
-            setTimeout(() => btns[sel].style.background = "#334155", 500);
+            btns[sel].innerText = "TRY AGAIN";
+            setTimeout(() => {
+                btns[sel].style.background = "#334155";
+                btns[sel].innerText = unitData[uId].questions[0].a[sel];
+            }, 600);
         }
     };
 
-    function save() {
+    window.clearAllData = () => {
+        if(confirm("This will wipe all your progress. Are you sure?")) {
+            userProgress = { currentUnit: 0, masteredUnits: [] };
+            save();
+            renderDashboard();
+        }
+    };
+
+    async function save() {
         localStorage.setItem('bus_master_data', JSON.stringify(userProgress));
         if (auth.currentUser) {
             const docRef = doc(db, 'artifacts', appId, 'users', auth.currentUser.uid, 'data');
-            setDoc(docRef, { progress: userProgress });
+            await setDoc(docRef, { progress: userProgress, timestamp: Date.now() });
         }
     }
 
-    signInAnonymously(auth);
+    window.onload = initApp;
 </script>
 </body>
 </html>
 
+    
