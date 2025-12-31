@@ -2,44 +2,41 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>MN Bus Master: Sync Professional</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>MN Bus Master</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
-        body { font-family: 'Segoe UI', system-ui, -apple-system, sans-serif; background-color: #f1f5f9; color: #0f172a; -webkit-tap-highlight-color: transparent; }
-        .unit-card { background: white; border-radius: 1.5rem; transition: all 0.3s ease; border: 1px solid #e2e8f0; margin-bottom: 1rem; }
-        .active-unit { border: 3px solid #f59e0b; box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1); }
-        .sim-option { cursor: pointer; display: block; padding: 1.1rem; border-radius: 0.75rem; background: #334155; margin-top: 0.6rem; border: 2px solid transparent; text-align: left; width: 100%; color: white; }
-        .progress-dot { width: 10px; height: 10px; border-radius: 50%; background: #cbd5e1; }
-        .progress-dot.complete { background: #059669; }
-        .progress-dot.current { background: #f59e0b; animation: pulse 2s infinite; }
-        @keyframes pulse { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.3); } }
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; background-color: #f8fafc; color: #1e293b; touch-action: manipulation; }
+        .unit-card { background: white; border-radius: 1.25rem; border: 1px solid #e2e8f0; margin-bottom: 1rem; padding: 1.25rem; box-shadow: 0 1px 3px rgba(0,0,0,0.05); }
+        .active-unit { border: 3px solid #f59e0b; }
+        .sim-option { cursor: pointer; display: block; padding: 1.25rem; border-radius: 1rem; background: #334155; margin-top: 0.75rem; color: white; width: 100%; text-align: left; font-size: 1.1rem; border: none; }
+        .btn-start { background-color: #1e293b; color: white; width: 100%; padding: 1rem; border-radius: 0.75rem; font-weight: 800; margin-top: 1rem; text-transform: uppercase; letter-spacing: 0.05em; }
+        .status-pill { background: #e2e8f0; color: #64748b; padding: 0.25rem 0.75rem; border-radius: 9999px; font-size: 0.7rem; font-weight: 700; }
+        .status-pill.online { background: #dcfce7; color: #166534; }
     </style>
 </head>
-<body class="p-4 md:p-8">
+<body class="p-4">
 
-<div class="container mx-auto max-w-4xl">
-    <header class="bg-slate-900 rounded-3xl p-6 text-white mb-8 shadow-xl border-b-4 border-yellow-500">
-        <div class="flex flex-col md:flex-row justify-between items-center gap-4">
-            <div>
-                <h1 class="text-2xl font-black italic uppercase text-yellow-500">Bus Master</h1>
-                <p id="user-display" class="text-slate-400 text-xs tracking-widest uppercase font-bold">Establishing Cloud Link...</p>
-            </div>
-            <div id="overall-progress" class="flex gap-2 bg-slate-800 p-3 rounded-full"></div>
+<div class="max-w-md mx-auto">
+    <header class="flex justify-between items-center mb-6 pt-2">
+        <div>
+            <h1 class="text-2xl font-black text-slate-900 tracking-tight">BUS MASTER</h1>
+            <div id="sync-status" class="status-pill inline-block mt-1">CONNECTING...</div>
         </div>
+        <div id="progress-bar" class="flex gap-1"></div>
     </header>
 
-    <main id="main-content">
-        <div class="flex flex-col items-center justify-center py-20 text-slate-500">
-            <div class="animate-spin rounded-full h-12 w-12 border-b-2 border-yellow-500 mb-4"></div>
-            <p>Syncing data across devices...</p>
+    <main id="app-content">
+        <div class="flex flex-col items-center justify-center py-20 text-slate-400">
+            <div class="animate-spin rounded-full h-8 w-8 border-b-2 border-slate-900 mb-4"></div>
+            <p class="font-bold text-sm">LOADING YOUR PROGRESS...</p>
         </div>
     </main>
 </div>
 
 <script type="module">
     import { initializeApp } from "https://www.gstatic.com/firebasejs/11.1.0/firebase-app.js";
-    import { getFirestore, doc, setDoc, getDoc, onSnapshot, enableIndexedDbPersistence } from "https://www.gstatic.com/firebasejs/11.1.0/firebase-firestore.js";
+    import { getFirestore, doc, setDoc, onSnapshot } from "https://www.gstatic.com/firebasejs/11.1.0/firebase-firestore.js";
     import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.1.0/firebase-auth.js";
 
     const firebaseConfig = {
@@ -57,7 +54,6 @@
     const appId = 'bus-master-app';
 
     let userProgress = { currentUnit: 0, masteredUnits: [] };
-    let hasCloudData = false;
 
     const unitData = [
         { id: 0, title: "Unit 1: Danger Zones", questions: [{ q: "How far does the Danger Zone extend in front of the bus?", a: ["10ft", "20ft", "30ft", "5ft"], c: 2 }] },
@@ -68,93 +64,96 @@
         { id: 5, title: "Unit 6: Medical/Legal", questions: [{ q: "MN Medical Exam frequency?", a: ["1 Year", "2 Years", "4 Years"], c: 1 }] }
     ];
 
-    // Fallback timer: Show whatever we have (local or default) if cloud is slow
-    const fallbackTimer = setTimeout(() => {
-        if (!hasCloudData) {
-            const local = localStorage.getItem('bus_master_local');
-            if (local) userProgress = JSON.parse(local);
-            document.getElementById('user-display').innerText = "Mode: Local (Cloud Search Active)";
-            renderDashboard();
-        }
-    }, 4000);
+    // Try to load local data immediately so user isn't waiting
+    const local = localStorage.getItem('bus_master_data');
+    if (local) {
+        userProgress = JSON.parse(local);
+        renderDashboard();
+    }
 
     onAuthStateChanged(auth, async (user) => {
         if (user) {
-            const userDocRef = doc(db, 'artifacts', appId, 'users', user.uid, 'data');
+            const docRef = doc(db, 'artifacts', appId, 'users', user.uid, 'data');
             
-            // Listen to cloud
-            onSnapshot(userDocRef, (snap) => {
+            // Listen to cloud, update UI when data arrives
+            onSnapshot(docRef, (snap) => {
                 if (snap.exists()) {
                     userProgress = snap.data().progress;
-                    hasCloudData = true;
-                    clearTimeout(fallbackTimer);
-                    document.getElementById('user-display').innerText = `Cloud Sync: ON (${user.uid.substring(0,4)})`;
-                    renderDashboard();
+                    localStorage.setItem('bus_master_data', JSON.stringify(userProgress));
                 } else {
-                    // Create first save if new user
-                    setDoc(userDocRef, { progress: userProgress });
-                    renderDashboard();
+                    setDoc(docRef, { progress: userProgress });
                 }
+                document.getElementById('sync-status').innerText = "SYNC: ON";
+                document.getElementById('sync-status').classList.add('online');
+                renderDashboard();
             }, (err) => {
-                console.error("Rules likely blocking access:", err);
+                document.getElementById('sync-status').innerText = "SYNC: LOCAL";
                 renderDashboard();
             });
         }
     });
 
     function renderDashboard() {
-        const main = document.getElementById('main-content');
-        if (!main) return;
+        const main = document.getElementById('app-content');
+        const progress = document.getElementById('progress-bar');
         
-        document.getElementById('overall-progress').innerHTML = unitData.map((_, i) => {
-            const status = userProgress.masteredUnits.includes(i) ? 'complete' : (i === userProgress.currentUnit ? 'current' : 'pending');
-            return `<div class="progress-dot ${status}"></div>`;
+        progress.innerHTML = unitData.map((_, i) => {
+            const status = userProgress.masteredUnits.includes(i) ? 'bg-emerald-500' : (i === userProgress.currentUnit ? 'bg-amber-500' : 'bg-slate-200');
+            return `<div class="h-2 w-4 rounded-full ${status}"></div>`;
         }).join('');
 
-        let html = `<div class="space-y-4">`;
+        let html = `<div class="space-y-3">`;
         unitData.forEach((u, i) => {
             const isLocked = i > userProgress.currentUnit;
-            const isMastered = userProgress.masteredUnits.includes(i);
+            const isDone = userProgress.masteredUnits.includes(i);
             html += `
-                <div class="unit-card p-6 ${isLocked ? 'opacity-50' : (i === userProgress.currentUnit ? 'active-unit' : 'bg-white')}">
-                    <h3 class="font-bold text-lg">${u.title}</h3>
-                    <button onclick="window.startModule(${i})" class="w-full mt-4 ${isMastered ? 'bg-emerald-600' : (isLocked ? 'bg-slate-300' : 'bg-slate-800')} text-white py-3 rounded-xl font-bold">
-                        ${isMastered ? 'Review' : (isLocked ? 'Locked' : 'Start')}
+                <div class="unit-card ${i === userProgress.currentUnit ? 'active-unit' : (isLocked ? 'opacity-40' : 'bg-emerald-50/50')}">
+                    <div class="flex justify-between items-start">
+                        <h3 class="font-bold text-lg leading-tight text-slate-800">${u.title}</h3>
+                        ${isDone ? '✅' : ''}
+                    </div>
+                    <button onclick="window.startUnit(${i})" class="btn-start ${isDone ? 'bg-emerald-700' : (isLocked ? 'bg-slate-200 text-slate-400' : 'bg-slate-900')}" ${isLocked ? 'disabled' : ''}>
+                        ${isDone ? 'Review' : (isLocked ? 'Locked' : 'Start')}
                     </button>
                 </div>`;
         });
         main.innerHTML = html + `</div>`;
     }
 
-    window.startModule = (unitId) => {
-        if (unitId > userProgress.currentUnit) return;
-        const q = unitData[unitId].questions[0];
-        document.getElementById('main-content').innerHTML = `
-            <div class="bg-white rounded-3xl p-8 shadow-lg">
-                <h2 class="text-xl font-bold mb-6">${q.q}</h2>
-                ${q.a.map((opt, idx) => `<button onclick="window.check(${unitId}, ${idx}, ${q.c})" class="sim-option">${opt}</button>`).join('')}
-                <button onclick="renderDashboard()" class="w-full mt-8 text-slate-400 text-sm font-bold">Back</button>
+    window.startUnit = (id) => {
+        const q = unitData[id].questions[0];
+        document.getElementById('app-content').innerHTML = `
+            <div class="bg-white p-6 rounded-3xl shadow-sm border">
+                <p class="text-[10px] font-black text-slate-400 mb-2 uppercase">UNIT ${id+1}</p>
+                <h2 class="text-xl font-bold mb-6 text-slate-900 leading-tight">${q.q}</h2>
+                <div class="space-y-3">
+                    ${q.a.map((opt, idx) => `<button onclick="window.check(${id}, ${idx}, ${q.c})" class="sim-option">${opt}</button>`).join('')}
+                </div>
+                <button onclick="renderDashboard()" class="w-full mt-8 text-slate-400 font-bold text-sm">BACK TO MENU</button>
             </div>`;
     };
 
-    window.check = async (unitId, selected, correct) => {
-        if (selected === correct) {
-            if (!userProgress.masteredUnits.includes(unitId)) {
-                userProgress.masteredUnits.push(unitId);
-                if (userProgress.currentUnit === unitId) userProgress.currentUnit++;
+    window.check = async (uId, sel, cor) => {
+        const btns = document.querySelectorAll('.sim-option');
+        if (sel === cor) {
+            btns[sel].style.background = "#059669";
+            if (!userProgress.masteredUnits.includes(uId)) {
+                userProgress.masteredUnits.push(uId);
+                if (userProgress.currentUnit === uId) userProgress.currentUnit++;
                 save();
             }
-            renderDashboard();
+            setTimeout(renderDashboard, 700);
         } else {
-            alert("Incorrect. Review your manual!");
+            btns[sel].style.background = "#dc2626";
+            setTimeout(() => btns[sel].style.background = "#334155", 500);
         }
     };
 
     function save() {
-        localStorage.setItem('bus_master_local', JSON.stringify(userProgress));
+        localStorage.setItem('bus_master_data', JSON.stringify(userProgress));
         if (auth.currentUser) {
-            const userDocRef = doc(db, 'artifacts', appId, 'users', auth.currentUser.uid, 'data');
-            setDoc(userDocRef, { progress: userProgress }, { merge: true });
+            const docRef = doc(db, 'artifacts', appId, 'users', auth.currentUser.uid, 'data');
+            setDoc(docRef, { progress: userProgress });
         }
     }
 
