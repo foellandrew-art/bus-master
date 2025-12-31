@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>MN Bus Master: Practice Mode</title>
+    <title>MN Bus Master: Full Curriculum</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
         body { font-family: 'Segoe UI', system-ui, -apple-system, sans-serif; background-color: #f1f5f9; color: #0f172a; -webkit-tap-highlight-color: transparent; }
@@ -23,7 +23,7 @@
         <div class="flex flex-col md:flex-row justify-between items-center gap-4">
             <div>
                 <h1 class="text-2xl font-black italic uppercase text-yellow-500">Bus Master</h1>
-                <p id="user-display" class="text-slate-400 text-xs tracking-widest uppercase font-bold">Initializing...</p>
+                <p id="user-display" class="text-slate-400 text-xs tracking-widest uppercase font-bold">Initializing System...</p>
             </div>
             <div id="overall-progress" class="flex gap-2 bg-slate-800 p-3 rounded-full"></div>
         </div>
@@ -32,7 +32,7 @@
     <main id="main-content">
         <div class="flex flex-col items-center justify-center py-20 text-slate-500">
             <div class="animate-spin rounded-full h-12 w-12 border-b-2 border-yellow-500 mb-4"></div>
-            <p id="loading-msg">Connecting to your personal server...</p>
+            <p>Loading Modules...</p>
         </div>
     </main>
 </div>
@@ -59,19 +59,21 @@
     let userProgress = { currentUnit: 0, masteredUnits: [] };
     let hasLoaded = false;
 
+    // RESTORED 6 UNIT CURRICULUM
     const unitData = [
         { id: 0, title: "Unit 1: Danger Zones", questions: [{ q: "How far does the Danger Zone extend in front of the bus?", a: ["10ft", "20ft", "30ft", "5ft"], c: 2 }] },
         { id: 1, title: "Unit 2: Air Brakes", questions: [{ q: "When should the low air alarm trigger?", a: ["100 PSI", "60 PSI", "20 PSI"], c: 1 }] },
-        { id: 2, title: "Unit 3: RR Crossings", questions: [{ q: "Distance to stop from rails?", a: ["5-10ft", "15-50ft", "100ft"], c: 1 }] }
+        { id: 2, title: "Unit 3: RR Crossings", questions: [{ q: "Stop distance from nearest rail?", a: ["5-10ft", "15-50ft", "100ft"], c: 1 }] },
+        { id: 4, title: "Unit 4: 8-Light Law", questions: [{ q: "Amber light distance in 45mph zone?", a: ["100ft", "200ft", "300ft"], c: 2 }] },
+        { id: 5, title: "Unit 5: Inspections", questions: [{ q: "Check for sleeping children is required:", a: ["Monthly", "Weekly", "After every route"], c: 2 }] },
+        { id: 6, title: "Unit 6: Medical/Legal", questions: [{ q: "MN Medical Exam frequency?", a: ["1 Year", "2 Years", "4 Years"], c: 1 }] }
     ];
 
-    // AUTOMATIC LOCAL FALLBACK after 2.5 seconds
     setTimeout(() => {
         if (!hasLoaded) {
-            console.log("Cloud slow - falling back to local storage");
             const localData = localStorage.getItem('bus_master_local');
             if (localData) userProgress = JSON.parse(localData);
-            document.getElementById('user-display').innerText = "Mode: Local (Offline)";
+            document.getElementById('user-display').innerText = "Mode: Local (Sync Delayed)";
             renderDashboard();
         }
     }, 2500);
@@ -83,12 +85,10 @@
                 if (snap.exists() && !hasLoaded) {
                     userProgress = snap.data().progress;
                     hasLoaded = true;
-                    document.getElementById('user-display').innerText = `Sync: ON (ID: ${user.uid.substring(0,4)})`;
+                    document.getElementById('user-display').innerText = `Sync: Active (${user.uid.substring(0,4)})`;
                     renderDashboard();
                 }
-            }, (err) => {
-                if (!hasLoaded) renderDashboard();
-            });
+            }, (err) => { if (!hasLoaded) renderDashboard(); });
         }
     });
 
@@ -106,13 +106,22 @@
             const isLocked = i > userProgress.currentUnit;
             const isMastered = userProgress.masteredUnits.includes(i);
             html += `
-                <div class="unit-card p-6 ${isLocked ? 'opacity-50 grayscale' : (i === userProgress.currentUnit ? 'active-unit border-yellow-500' : 'bg-white')}">
-                    <h3 class="font-bold text-lg">${u.title}</h3>
-                    <button onclick="window.startModule(${i})" class="w-full mt-4 ${isMastered ? 'bg-emerald-600' : (isLocked ? 'bg-slate-300' : 'bg-slate-800')} text-white py-3 rounded-xl font-bold">
-                        ${isMastered ? 'Review' : (isLocked ? 'Locked' : 'Start')}
+                <div class="unit-card p-6 ${isLocked ? 'opacity-50 grayscale' : (i === userProgress.currentUnit ? 'active-unit border-yellow-500 shadow-lg' : 'bg-white')}">
+                    <div class="flex justify-between items-center mb-4">
+                        <h3 class="font-bold text-lg">${u.title}</h3>
+                        ${isMastered ? `<button onclick="window.resetUnit(${i})" class="text-[10px] bg-slate-100 px-2 py-1 rounded font-bold text-slate-500">RESET</button>` : ''}
+                    </div>
+                    <button onclick="window.startModule(${i})" class="w-full ${isMastered ? 'bg-emerald-600' : (isLocked ? 'bg-slate-300' : 'bg-slate-800')} text-white py-3 rounded-xl font-bold transition-all active:scale-95">
+                        ${isMastered ? 'Review Module' : (isLocked ? 'Locked' : 'Start Module')}
                     </button>
                 </div>`;
         });
+        
+        // Final Exam Placeholder
+        if(userProgress.currentUnit >= unitData.length) {
+            html += `<div class="p-6 bg-yellow-500 rounded-2xl text-center font-black text-slate-900 uppercase italic">Final Exam Ready!</div>`;
+        }
+
         main.innerHTML = html + `</div>`;
     }
 
@@ -120,10 +129,11 @@
         if (unitId > userProgress.currentUnit) return;
         const q = unitData[unitId].questions[0];
         document.getElementById('main-content').innerHTML = `
-            <div class="bg-white rounded-3xl p-8 shadow-lg">
+            <div class="bg-white rounded-3xl p-8 shadow-lg animate-in fade-in duration-300">
+                <p class="text-[10px] font-bold text-slate-400 uppercase mb-2">Unit ${unitId + 1} Question</p>
                 <h2 class="text-xl font-bold mb-6">${q.q}</h2>
                 ${q.a.map((opt, idx) => `<button onclick="window.check(${unitId}, ${idx}, ${q.c})" class="sim-option">${opt}</button>`).join('')}
-                <button onclick="renderDashboard()" class="w-full mt-8 text-slate-400 text-sm font-bold">Go Back</button>
+                <button onclick="renderDashboard()" class="w-full mt-8 text-slate-400 text-sm font-bold border-t pt-4">Exit to Dashboard</button>
             </div>`;
     };
 
@@ -134,13 +144,7 @@
             if (!userProgress.masteredUnits.includes(unitId)) {
                 userProgress.masteredUnits.push(unitId);
                 if (userProgress.currentUnit === unitId) userProgress.currentUnit++;
-                
-                // Save to both local and cloud
-                localStorage.setItem('bus_master_local', JSON.stringify(userProgress));
-                if (auth.currentUser) {
-                    const userDocRef = doc(db, 'artifacts', appId, 'users', auth.currentUser.uid, 'data');
-                    setDoc(userDocRef, { progress: userProgress }, { merge: true });
-                }
+                save();
             }
             setTimeout(renderDashboard, 800);
         } else {
@@ -149,9 +153,24 @@
         }
     };
 
+    window.resetUnit = (id) => {
+        userProgress.masteredUnits = userProgress.masteredUnits.filter(u => u !== id);
+        // Reset currentUnit to the lowest un-mastered unit
+        userProgress.currentUnit = Math.min(...unitData.map(u => u.id).filter(u => !userProgress.masteredUnits.includes(u)));
+        save();
+        renderDashboard();
+    };
+
+    function save() {
+        localStorage.setItem('bus_master_local', JSON.stringify(userProgress));
+        if (auth.currentUser) {
+            const userDocRef = doc(db, 'artifacts', appId, 'users', auth.currentUser.uid, 'data');
+            setDoc(userDocRef, { progress: userProgress }, { merge: true });
+        }
+    }
+
     signInAnonymously(auth).catch(() => renderDashboard());
 </script>
 </body>
 </html>
 
-    
